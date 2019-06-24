@@ -25,19 +25,6 @@ class Channel:
 
         return msg
 
-def accept_connection(address=('', 27000)):
-    sock = socket(AF_INET, SOCK_STREAM)
-    sock.bind(address)
-    sock.listen(True)
-    client, addr = sock.accept()
-    ch = Channel(client)
-    return ch
-
-def make_connection(address=('localhost', 27000)):
-    sock = socket(AF_INET, SOCK_STREAM)
-    sock.connect(address)
-    return Channel(sock)
-
 
 if __name__ == '__main__':
     from socket import socketpair
