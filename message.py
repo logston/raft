@@ -14,21 +14,12 @@ class Channel:
         self.sock.sendall(header)
         self.sock.sendall(msg)
 
-    def recv_exact(self, size):
-        msg = b''
-        while len(msg) < size:
-            fragment = self.sock.recv(size - len(msg))
-            if not fragment:
-                raise IOError('Incomplete message')
-            msg += fragment
-        return msg
-
     def recv(self):
         # Received the size of the message
         # Received the payload (exactly the size in bytes)
         # Return the message
         header = self.sock.recv(12)
-        assert len(header) == self.header_len
+        assert len(header) == self.header_len, header
 
         msg = self.sock.recv(int(header))
 
