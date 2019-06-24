@@ -7,9 +7,18 @@ class Channel:
         # Send len(msg)
         # Send msg
         assert len(msg) < 10 ** 12
-        header = b'{:12d}'.format(len(msg))
+        header = b'%12d' % len(msg)
         self.sock.sendall(header)
         self.sock.sendall(msg)
+
+    def recv_exact(self, size):
+        msg = b''
+        while len(msg) < size:
+            fragment = self.sock.recv(size - len(msg))
+            if not fragment:
+                raise IOError('Incomplete message')
+            msg += fragment
+        return msg
 
     def recv(self):
         # Received the size of the message
