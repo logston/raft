@@ -1,3 +1,6 @@
+from socket import socket, AF_INET, SOCK_STREAM
+
+
 class Channel:
     def __init__(self, sock):
         self.sock = sock
@@ -31,13 +34,26 @@ class Channel:
 
         return msg
 
-
-if __name__ == '__main__':
-    from socket import socket, AF_INET, SOCK_STREAM
-
+def accept_connection(address=('', 27000)):
     sock = socket(AF_INET, SOCK_STREAM)
-    sock.bind(('', 27000))
+    sock.bind(address)
     sock.listen(True)
     client, addr = sock.accept()
     ch = Channel(client)
+    return ch
+
+def make_connection(address=('localhost', 27000)):
+    sock = socket(AF_INET, SOCK_STREAM)
+    sock.connect(address)
+    return Channel(sock)
+
+
+if __name__ == '__main__':
+    from socket import socketpair
+
+    s1, s2 = socketpair()
+    ch1 = Channel(s1)
+    ch2 = Channel(s2)
+    ch1.send(b'hi!')
+    ch2.recv() == b'hi!'
 
