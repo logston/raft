@@ -1,5 +1,6 @@
 import functools
 
+
 def queue_exceptions(func):
     """
     Decorate subprocesses tests with this to catch their failed assertions

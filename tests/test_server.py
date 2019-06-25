@@ -24,13 +24,13 @@ def create_client(address=('localhost', 27000)):
 def client_1_test():
     client = create_client()
     client.set('k1', 'v1')
-    assert client.get('k1') == 'v2'
+    assert client.get('k1') == 'v1'
 
 
 @queue_exceptions
 def client_2_test():
     client = create_client()
-    assert client.get('k1') == 'v2'
+    assert client.get('k1') == 'v1'
 
 
 def test_server_smoke():
