@@ -1,3 +1,4 @@
+import functools
 import logging
 import multiprocessing as mp
 from socket import socket, AF_INET, SOCK_STREAM
@@ -18,29 +19,17 @@ def create_client(address=('localhost', 27000)):
     return client
 
 
-def client_1_test(q):
-    try:
-        client = create_client()
-        client.set('k1', 'v1')
-        assert client.get('k1') == 'v2'
-
-    except Exception as e:
-        q.put(str(e))
-        raise
-
-    time.sleep(0.25)
+@queue_exceptions
+def client_1_test():
+    client = create_client()
+    client.set('k1', 'v1')
+    assert client.get('k1') == 'v2'
 
 
-def client_2_test(q):
-    try:
-        client = create_client()
-        assert client.get('k1') == 'v2'
-
-    except Exception as e:
-        q.put(str(e))
-        raise
-
-    time.sleep(0.25)
+@queue_exceptions
+def client_2_test():
+    client = create_client()
+    assert client.get('k1') == 'v2'
 
 
 def test_server_smoke():
@@ -54,6 +43,8 @@ def test_server_smoke():
 
     client_2 = mp.Process(target=client_2_test, args=(queue,), daemon=True)
     client_2.start()
+
+    time.sleep(0.25)
 
     assert queue.empty()
 
