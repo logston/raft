@@ -1,9 +1,11 @@
 import time
+import sys
 
 INITIAL = {
     'out1': 'G',
     'out2': 'R',
     'clock': 0,
+    'walk': False,
 }
 
 G1 = lambda s: (s['out1'] == 'G' and
@@ -26,12 +28,38 @@ Y2 = lambda s: (s['out1'] == 'R' and
                 ((s['clock'] < 5 and dict(s, clock=s['clock'] + 1)) or
                  (s['clock'] == 5 and dict(s, clock=0, out1='G', out2='R'))))
 
-NEXT = lambda s: G1(s) or Y1(s) or G2(s) or Y2(s)
+TICK = lambda evt, s: evt == 'tick' and (G1(s) or Y1(s) or G2(s) or Y2(s))
+BUTTON = lambda evt, s: evt == 'button' and dict(s, walk=True)
+
+NEXT = lambda evt, s: TICK(evt, s) or BUTTON(evt, s)
 
 
-state = INITIAL
-while state:
-    print(state)
-    time.sleep(0.2)
-    state = NEXT(state)
+def run():
+    import queue
+    import threading
 
+    event_queue = queue.Queue()
+
+    def run_timer():
+        while True:
+            time.sleep(1)
+            event_queue.put('tick')
+
+    def run_button():
+        while True:
+            sys.stdin.readline()
+            event_queue.put('button')
+
+    threading.Thread(target=run_timer, daemon=True).start()
+    threading.Thread(target=run_button, daemon=True).start()
+
+    state = INITIAL
+    while state:
+        print(state)
+        evt = event_queue.get()
+        state = NEXT(evt, state)
+
+try:
+    run()
+except KeyboardInterrupt:
+    pass
