@@ -68,7 +68,32 @@ def run():
         evt = event_queue.get()
         state = NEXT(evt, state)
 
-try:
-    run()
-except KeyboardInterrupt:
-    pass
+
+def freeze(d):
+    return tuple(sorted(d.items()))
+
+def simulate():
+    from collections import deque
+    seen_states = set()
+    must_check = deque([INITIAL])   # Queue of pending states
+
+    while must_check:
+        state = must_check.popleft()    # Get a state
+        if freeze(state) in seen_states:
+            continue
+        seen_states.add(freeze(state))
+        num_pending = len(must_check)
+        for evt in ['tick', 'button']:   # ALL possible events
+            nextstate = NEXT(evt, state)
+            if nextstate:
+                must_check.append(nextstate)
+        if num_pending == len(must_check):
+            print("DEADLOCK in", state)
+
+    print("Checked", len(seen_states), "states")
+simulate()
+
+# try:
+#     run()
+# except KeyboardInterrupt:
+#     pass
