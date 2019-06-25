@@ -1,4 +1,3 @@
-import functools
 import logging
 import multiprocessing as mp
 from socket import socket, AF_INET, SOCK_STREAM
@@ -6,9 +5,11 @@ import time
 
 import pytest
 
-from kvstore import KVClient
-from message import Channel
-from server import run_server
+from raft.kvstore import KVClient
+from raft.message import Channel
+from raft.server import run_server
+
+from .utils import queue_exceptions
 
 
 def create_client(address=('localhost', 27000)):

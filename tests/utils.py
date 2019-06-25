@@ -1,3 +1,4 @@
+import functools
 
 def queue_exceptions(func):
     """

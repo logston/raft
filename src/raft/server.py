@@ -3,8 +3,8 @@ import socket
 import sys
 import threading
 
-from kvstore import KVServer
-from message import Channel
+from .kvstore import KVServer
+from .message import Channel
 
 
 logging.basicConfig(stream=sys.stdout, level=logging.DEBUG)

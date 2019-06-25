@@ -1,8 +1,8 @@
 from multiprocessing import Process
 from socket import socketpair
 
-from kvstore import KVServer, KVClient
-from message import Channel
+from raft.kvstore import KVServer, KVClient
+from raft.message import Channel
 
 
 def test_kvstore_smoke():
