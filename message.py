@@ -19,19 +19,14 @@ class Channel:
         # Received the payload (exactly the size in bytes)
         # Return the message
         header = self.sock.recv(12)
+
+        if header == b'':
+            # Client has closed connection
+            raise IOError('Client closed connection')
+
         assert len(header) == self.header_len, header
 
         msg = self.sock.recv(int(header))
 
         return msg
-
-
-if __name__ == '__main__':
-    from socket import socketpair
-
-    s1, s2 = socketpair()
-    ch1 = Channel(s1)
-    ch2 = Channel(s2)
-    ch1.send(b'hi!')
-    ch2.recv() == b'hi!'
 

@@ -24,3 +24,13 @@ def test_channel_recv():
     msg = c.recv()
     assert msg == b'hi'
 
+
+def test_smoke():
+    from socket import socketpair
+
+    s1, s2 = socketpair()
+    ch1 = Channel(s1)
+    ch2 = Channel(s2)
+    ch1.send(b'hi!')
+    ch2.recv() == b'hi!'
+

@@ -1,9 +1,13 @@
 import logging
-from socket import socket, AF_INET, SOCK_STREAM
+import socket
+import sys
 import threading
 
 from kvstore import KVServer
 from message import Channel
+
+
+logging.basicConfig(stream=sys.stdout, level=logging.DEBUG)
 
 
 def handle_client(channel):
@@ -11,12 +15,15 @@ def handle_client(channel):
     KVServer(channel).run()
 
 
-def server(address=('', 27000)):
+def run_server(address=('', 27000)):
     logging.info('Starting server socket')
-    sock = socket(AF_INET, SOCK_STREAM)
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 
     sock.bind(address)
     sock.listen(True)
+
+    threads = []
 
     try:
         while True:
@@ -27,11 +34,18 @@ def server(address=('', 27000)):
             ch = Channel(client)
 
             thread = threading.Thread(target=handle_client, args=(ch,))
+            threads.append(thread)
             thread.start()
+
     except KeyboardInterrupt:
+        for thread in threads:
+            thread.join()
+
+        sock.close()
+
         logging.info('Shutdown server')
 
 
 if __name__ == '__main__':
-    server()
+    run_server()
 

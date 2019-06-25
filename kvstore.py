@@ -24,18 +24,22 @@ class KVServer:
         return data['name'], data['args']
 
     def run(self):
-        while True:
-            logging.info('Waiting for data')
+        try:
+            while True:
+                logging.info('Waiting for data')
 
-            name, args = self.recv()
-            logging.info('Got data', name, args)
+                name, args = self.recv()
+                logging.info(f'Got data {name} {args}')
 
-            if name == 'get':
-                result = get_value(args)
-            elif name == 'set':
-                result = set_value(**args)
+                if name == 'get':
+                    result = get_value(args)
+                elif name == 'set':
+                    result = set_value(**args)
 
-            self.ch.send(result.encode())
+                self.ch.send(result.encode())
+
+        except IOError:
+            pass
 
 
 class KVClient:
@@ -61,18 +65,4 @@ class KVClient:
         self.ch.send(msg)
         resp = self.ch.recv()
         return resp.decode()
-
-
-if __name__ == '__main__':
-    from socket import socket, AF_INET, SOCK_STREAM
-    from message import Channel
-
-    sock = socket(AF_INET, SOCK_STREAM)
-    address = ('', 27000)
-    sock.bind(address)
-    sock.listen(True)
-    client, addr = sock.accept()
-    ch = Channel(client)
-    logging.info('Created socket')
-    KVServer(ch).run()
 
