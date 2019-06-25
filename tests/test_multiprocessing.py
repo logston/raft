@@ -35,7 +35,7 @@ def test_multiprocessing():
     client_2 = mp.Process(target=client_failure, args=(queue,), daemon=True)
     client_2.start()
 
-    time.sleep(1)  # Let child processes do their thing
+    time.sleep(0.25)  # Let child processes do their thing
 
     with pytest.raises(AssertionError):
         assert queue.empty()

@@ -10,12 +10,12 @@ from .message import Channel
 logging.basicConfig(stream=sys.stdout, level=logging.DEBUG)
 
 
-def handle_client(channel):
+def handle_client(channel, log_path):
     logging.info('Running channel')
-    KVServer(channel).run()
+    KVServer(channel, log_path).run()
 
 
-def run_server(address=('', 27000)):
+def run_server(address=('', 27000), log_path='kvstore.log'):
     logging.info('Starting server socket')
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -33,7 +33,7 @@ def run_server(address=('', 27000)):
             logging.info(f'Connected to client at {addr}')
             ch = Channel(client)
 
-            thread = threading.Thread(target=handle_client, args=(ch,))
+            thread = threading.Thread(target=handle_client, args=(ch, log_path))
             threads.append(thread)
             thread.start()
 

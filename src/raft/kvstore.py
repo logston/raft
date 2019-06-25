@@ -9,14 +9,22 @@ def get_value(key):
     return DATA[key]
 
 
-def set_value(**kwargs):
+def set_value(kwargs, log_path):
     DATA.update(kwargs)
+    write_log(kwargs, log_path)
     return 'OK'
 
 
+def write_log(kwargs, log_path):
+    line = json.dumps(kwargs, sort_keys=True)
+    with open(log_path, 'a') as fp:
+        fp.write(line + '\n')
+
+
 class KVServer:
-    def __init__(self, ch):
+    def __init__(self, ch, log_path):
         self.ch = ch
+        self.log_path = log_path
 
     def recv(self):
         msg = self.ch.recv()
@@ -34,7 +42,7 @@ class KVServer:
                 if name == 'get':
                     result = get_value(args)
                 elif name == 'set':
-                    result = set_value(**args)
+                    result = set_value(args, self.log_path)
 
                 self.ch.send(result.encode())
 
