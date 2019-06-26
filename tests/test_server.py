@@ -6,7 +6,7 @@ import time
 import pytest
 
 from raft.kvstore import KVClient
-from raft.message import Channel
+from raft.channel import Channel
 from raft.server import run_server
 
 from . import utils

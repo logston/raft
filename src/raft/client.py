@@ -1,7 +1,7 @@
 from socket import socket, AF_INET, SOCK_STREAM
 
 from kvstore import KVClient
-from message import Channel
+from channel import Channel
 
 
 address = ('localhost', 27000)

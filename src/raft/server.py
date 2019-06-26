@@ -4,7 +4,7 @@ import sys
 import threading
 
 from .kvstore import KVServer
-from .message import Channel
+from .channel import Channel
 
 
 logging.basicConfig(stream=sys.stdout, level=logging.DEBUG)

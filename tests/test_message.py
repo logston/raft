@@ -1,7 +1,7 @@
 import socket
 from unittest import mock
 
-from raft.message import Channel
+from raft.channel import Channel
 
 
 def test_channel_send():
