@@ -22,6 +22,7 @@ class Machine:
         self._state = constants.State.FOLLOWER
         self._election_timeout = random.randint(150, 300)
         self._controller = controller
+        self._votes = 0
 
         # Schedule first timeout
         self.handle_schedule_time_message(None)
@@ -80,6 +81,7 @@ class Machine:
         self.current_term += 1
         self._state = constants.State.CANDIDATE
         self.voted_for = self.id
+        self._votes = 1
 
         # Request votes from all other servers
         for i in range(len(self._servers)):
@@ -106,12 +108,39 @@ class Machine:
         """
         Received vote from other server.
 
-        Follower -> Follower
         Candidate -> Leader
         """
         # If not in candidate state, ignore
+        if self._state != constants.State.CANDIDATE:
+            return
 
-        # If received a majority of votes, promote to leader
+        if msg.term != self.current_term:
+            return
 
-        # Send heartbeats to establish control
+        if not msg.vote_granted:
+            return
+
+        self._votes += 1
+
+        if self._votes > (len(self._servers) / 2):
+            # If received a majority of votes, promote to leader
+            self._state = constants.State.LEADER
+
+            # Tell other servers about new reign
+            # Send heartbeats to establish control
+            for i in range(len(self._servers)):
+                if i == self.id:
+                    continue
+
+                msg = messages.AppendEntriesMessage(
+                    src=self.id,
+                    dst=i,
+                    term=self.current_term,
+                    leader_id=self.id,
+                    prev_log_index=None,
+                    prev_log_term=None,
+                    entries=(),
+                    leader_commit=None,
+                )
+                self._controller.enqueue(msg)
 

@@ -26,7 +26,7 @@ def test_init(now):
     assert m.id == id_
     assert m._servers == servers
     assert m._state == constants.State.FOLLOWER
-    assert m._election_timeout in range(150, 300)
+    assert m._election_timeout in range(150, 301)
     assert m._controller is controller
 
     # assert controller called with TimeMessage
@@ -286,4 +286,131 @@ def test_handle_no_comm_election_timeout_leader_to_leader(now):
     assert first_arg.dst == id_
     assert first_arg.term == m.current_term
     assert first_arg.time == 123456789 + m._election_timeout
+
+
+def test_handle_request_vote_reply_is_leader():
+    controller = mock.MagicMock()
+    id_ = 1
+    m = Machine(id_, controller)
+    m._controller.enqueue.reset_mock()
+    m.current_term = 5
+    m.voted_for = id_
+    m._state = constants.State.LEADER
+
+    msg = messages.RequestVoteResponseMessage(
+        src=0,
+        dst=1,
+        term=99,
+    )
+
+    m.handle_request_vote_reply(msg)
+
+    assert m._state == constants.State.LEADER
+    m._controller.enqueue.assert_not_called()
+
+
+def test_handle_request_vote_reply_is_follower():
+    controller = mock.MagicMock()
+    id_ = 1
+    m = Machine(id_, controller)
+    m._controller.enqueue.reset_mock()
+    m.current_term = 5
+    m.voted_for = id_
+    m._state = constants.State.FOLLOWER
+
+    msg = messages.RequestVoteResponseMessage(
+        src=0,
+        dst=1,
+        term=99,
+    )
+
+    m.handle_request_vote_reply(msg)
+
+    assert m._state == constants.State.FOLLOWER
+    m._controller.enqueue.assert_not_called()
+
+
+def test_handle_request_vote_reply_is_candidate_stale_term():
+    controller = mock.MagicMock()
+    id_ = 1
+    m = Machine(id_, controller)
+    m._controller.enqueue.reset_mock()
+    m.current_term = 5
+    m.voted_for = id_
+    m._state = constants.State.CANDIDATE
+    m._votes = 2
+
+    msg = messages.RequestVoteResponseMessage(
+        src=0,
+        dst=1,
+        term=99,
+    )
+
+    m.handle_request_vote_reply(msg)
+
+    assert m._state == constants.State.CANDIDATE
+    m._controller.enqueue.assert_not_called()
+
+
+def test_handle_request_vote_reply_is_candidate_vote_not_granted():
+    controller = mock.MagicMock()
+    id_ = 1
+    m = Machine(id_, controller)
+    m._controller.enqueue.reset_mock()
+    m.current_term = 5
+    m.voted_for = id_
+    m._state = constants.State.CANDIDATE
+    m._votes = 2
+
+    msg = messages.RequestVoteResponseMessage(
+        src=0,
+        dst=1,
+        term=m.current_term,
+        vote_granted=False,
+    )
+
+    m.handle_request_vote_reply(msg)
+
+    assert m._state == constants.State.CANDIDATE
+    m._controller.enqueue.assert_not_called()
+
+
+def test_handle_request_vote_reply_is_candidate_win_election():
+    controller = mock.MagicMock()
+    id_ = 1
+    m = Machine(id_, controller)
+    m._controller.enqueue.reset_mock()
+    m.current_term = 5
+    m.voted_for = id_
+    m._state = constants.State.CANDIDATE
+    m._votes = 2
+
+    msg = messages.RequestVoteResponseMessage(
+        src=0,
+        dst=1,
+        term=m.current_term,
+    )
+
+    m.handle_request_vote_reply(msg)
+
+    assert m._state == constants.State.LEADER
+
+    # Assert messages sent to all other servers
+    enqueue_calls = m._controller.enqueue.mock_calls
+    assert len(enqueue_calls) == len(m._servers) - 1
+    dsts = set()
+    for mock_call in enqueue_calls:
+        name, args, kwargs = mock_call
+        msg = args[0]
+        assert isinstance(msg, messages.AppendEntriesMessage)
+        assert msg.src == id_
+        dsts.add(msg.dst)
+        assert msg.term == m.current_term
+        assert msg.leader_id == id_
+        assert msg.prev_log_term == None
+        assert msg.prev_log_index == None
+        assert msg.entries == ()
+        assert msg.leader_commit == None
+
+    assert set(range(len(m._servers))) - {id_} == dsts
 

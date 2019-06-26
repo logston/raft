@@ -30,3 +30,9 @@ class RequestVoteMessage(Message):
         self.last_log_index = last_log_index
         self.last_log_term = last_log_term
 
+
+class RequestVoteResponseMessage(Message):
+    def __init__(self, vote_granted=True, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.vote_granted = vote_granted
+
