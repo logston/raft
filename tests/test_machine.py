@@ -37,6 +37,31 @@ def test_init(now):
     assert isinstance(first_arg, messages.TimeMessage)
     assert first_arg.src == id_
     assert first_arg.dst == id_
+    assert first_arg.term == m.current_term
+    assert first_arg.time == 123456789 + m._election_timeout
+
+
+@mock.patch('raft.machine.utils.now')
+def test_handle_schedule_time_message(now):
+    now.return_value = 123456789
+
+    controller = mock.MagicMock()
+    servers = [(), ()]  # Need two items in list for id = 1 to be valid
+    id_ = 1
+
+    m = Machine(id_, controller, servers)
+    m._controller.reset_mock()
+
+    m.handle_schedule_time_message(None)
+
+    # assert controller called with TimeMessage
+    enqueue_calls = m._controller.enqueue.mock_calls
+    first_call = enqueue_calls[0]
+    name, args, kwargs = first_call
+    first_arg = args[0]
+    assert isinstance(first_arg, messages.TimeMessage)
+    assert first_arg.src == id_
+    assert first_arg.dst == id_
     assert first_arg.time == 123456789 + m._election_timeout
 
 
@@ -144,7 +169,7 @@ def test_handle_append_entries_candidate_to_candidate_msg_term_too_small():
     assert m.voted_for == id_
 
 
-def test_handle_no_comm_election_timeout():
+def test_handle_no_comm_election_timeout_follower_to_candidate():
     controller = mock.MagicMock()
     id_ = 1
     m = Machine(id_, controller)
@@ -157,6 +182,7 @@ def test_handle_no_comm_election_timeout():
     msg = messages.TimeMessage(
         src=2,
         dst=id_,
+        term=m.current_term,
         time=utils.now()
     )
 
@@ -182,4 +208,82 @@ def test_handle_no_comm_election_timeout():
         assert msg.last_log_term == 5
 
     assert set(range(len(m._servers))) - {id_} == dsts
+
+
+def test_handle_no_comm_election_timeout_candidate_to_candidate():
+    controller = mock.MagicMock()
+    id_ = 1
+    m = Machine(id_, controller)
+    m._controller.enqueue.reset_mock()
+    m.current_term = 5
+    m._state = constants.State.CANDIDATE
+    m.voted_for = None
+    m.last_applied = 17
+
+    msg = messages.TimeMessage(
+        src=2,
+        dst=id_,
+        term=m.current_term,
+        time=utils.now()
+    )
+
+    m.handle_no_comm_election_timeout(msg)
+
+    assert m.current_term == 6
+    assert m._state == constants.State.CANDIDATE
+    assert m.voted_for == id_
+
+    # Assert messages sent to all other servers
+    enqueue_calls = m._controller.enqueue.mock_calls
+    assert len(enqueue_calls) == len(m._servers) - 1
+    dsts = set()
+    for mock_call in enqueue_calls:
+        name, args, kwargs = mock_call
+        msg = args[0]
+        assert isinstance(msg, messages.RequestVoteMessage)
+        assert msg.src == id_
+        dsts.add(msg.dst)
+        assert msg.term == 6
+        assert msg.candidate_id == id_
+        assert msg.last_log_index == 17
+        assert msg.last_log_term == 5
+
+    assert set(range(len(m._servers))) - {id_} == dsts
+
+
+@mock.patch('raft.machine.utils.now')
+def test_handle_no_comm_election_timeout_leader_to_leader(now):
+    now.return_value = 123456789
+
+    controller = mock.MagicMock()
+    id_ = 1
+    m = Machine(id_, controller)
+    m._controller.enqueue.reset_mock()
+    m.current_term = 5
+    m._state = constants.State.LEADER
+    m.voted_for = id_
+    m.last_applied = 17
+
+    msg = messages.TimeMessage(
+        src=2,
+        dst=id_,
+        term=m.current_term,
+        time=utils.now()
+    )
+
+    m.handle_no_comm_election_timeout(msg)
+
+    assert m.current_term == 5
+    assert m._state == constants.State.LEADER
+    assert m.voted_for == id_
+
+    enqueue_calls = m._controller.enqueue.mock_calls
+    call = enqueue_calls[0]
+    name, args, kwargs = call
+    first_arg = args[0]
+    assert isinstance(first_arg, messages.TimeMessage)
+    assert first_arg.src == id_
+    assert first_arg.dst == id_
+    assert first_arg.term == m.current_term
+    assert first_arg.time == 123456789 + m._election_timeout
 

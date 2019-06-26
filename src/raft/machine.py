@@ -24,9 +24,15 @@ class Machine:
         self._controller = controller
 
         # Schedule first timeout
+        self.handle_schedule_time_message(None)
+
+    def handle_schedule_time_message(self, msg):
+        # Tell controller to clear its queue of time messages from this
+        # machine and to enqueue a new time message from this machine.
         m = messages.TimeMessage(
             src=self.id,
             dst=self.id,
+            term=self.current_term,
             time=utils.now() + self._election_timeout,
         )
         self._controller.enqueue(m)
@@ -49,6 +55,12 @@ class Machine:
                 self._state = constants.State.FOLLOWER
                 self.voted_for = msg.leader_id
 
+        # If any message is received from leader,
+        # tell controller to clear its queue of time messages from this
+        # machine and to enqueue a new time message from this machine.
+        if self._state in (constants.State.CANDIDATE, constants.State.FOLLOWER):
+            self.handle_schedule_time_message(None)
+
     def handle_no_comm_election_timeout(self, msg):
         """
         If a follower receives no communication over a period of time,
@@ -57,10 +69,19 @@ class Machine:
 
         Follower -> Candidate
         """
+        # If machine is leader and it gets a times message,
+        # no worries, its the leader no other leader timed out.
+        # Just place another timeout message on the controller queue
+        # and carry on.
+        if self._state == constants.State.LEADER:
+            self.handle_schedule_time_message(None)
+            return
+
         self.current_term += 1
         self._state = constants.State.CANDIDATE
         self.voted_for = self.id
 
+        # Request votes from all other servers
         for i in range(len(self._servers)):
             if i == self.id:
                 continue
