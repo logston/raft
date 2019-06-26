@@ -33,7 +33,7 @@ class Machine:
     def id(self):
         return self._id
 
-    def handle_append_entries(self, event):
+    def handle_append_entries(self, msg: messages.AppendEntriesMessage):
         """
         Could be heartbeat.
         Leader -> Follower
@@ -45,10 +45,13 @@ class Machine:
         Could just be append entires request.
         Follower -> Follower
         """
-        pass
+        # Need to check if should be demoted
+        if self._state in (constants.State.CANDIDATE, constants.State.LEADER):
+            if msg.term >= self.current_term:
+                self._state = constants.State.FOLLOWER
+                self.voted_for = msg.leader_id
 
-
-    def handle_no_comm_election_timeout(self, event):
+    def handle_no_comm_election_timeout(self, msg):
         """
         If a follower receives no communication over a period of time,
         called the election timeout, then it assumes there is no viable
@@ -64,14 +67,14 @@ class Machine:
 
         # Issue requests for vote to every other server in cluster
 
-    def handle_request_vote(self, event):
+    def handle_request_vote(self, msg):
         """
         Some other server has asked this server for its vote for leader.
 
         Follower -> Follower
         """
 
-    def handle_request_vote_reply(self, event):
+    def handle_request_vote_reply(self, msg):
         """
         Received vote from other server.
 

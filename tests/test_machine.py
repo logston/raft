@@ -61,6 +61,7 @@ def test_handle_append_entries_leader_to_follower():
     m.handle_append_entries(msg)
 
     assert m._state == constants.State.FOLLOWER
+    assert m.voted_for == 2
 
 
 def test_handle_append_entries_candidate_to_follower():
@@ -86,4 +87,57 @@ def test_handle_append_entries_candidate_to_follower():
     m.handle_append_entries(msg)
 
     assert m._state == constants.State.FOLLOWER
+    assert m.voted_for == 2
+
+
+def test_handle_append_entries_leader_to_leader_msg_term_too_small():
+    controller = mock.MagicMock()
+    servers = []
+    id_ = 1
+    m = Machine(id_, controller, servers)
+    m.current_term = 5
+
+    m._state = constants.State.LEADER
+
+    msg = messages.AppendEntriesMessage(
+        src=2,
+        dst=id_,
+        term=3,  # Old term
+        leader_id=2,
+        prev_log_index=None,
+        prev_log_term=None,
+        entries=(),
+        leader_commit=None,
+    )
+
+    m.handle_append_entries(msg)
+
+    assert m._state == constants.State.LEADER
+
+
+def test_handle_append_entries_candidate_to_candidate_msg_term_too_small():
+    controller = mock.MagicMock()
+    servers = []
+    id_ = 1
+    m = Machine(id_, controller, servers)
+    m.current_term = 5
+
+    m._state = constants.State.CANDIDATE
+    m.voted_for = id_
+
+    msg = messages.AppendEntriesMessage(
+        src=2,
+        dst=id_,
+        term=3,  # Old term
+        leader_id=2,
+        prev_log_index=None,
+        prev_log_term=None,
+        entries=(),
+        leader_commit=None,
+    )
+
+    m.handle_append_entries(msg)
+
+    assert m._state == constants.State.CANDIDATE
+    assert m.voted_for == id_
 
