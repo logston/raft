@@ -11,7 +11,7 @@ def test_init(now):
     now.return_value = 123456789
 
     controller = mock.MagicMock()
-    servers = []
+    servers = [(), ()]  # Need two items in list for id = 1 to be valid
     id_ = 1
 
     m = Machine(id_, controller, servers)
@@ -23,15 +23,17 @@ def test_init(now):
     assert m.next_index == 0
     assert m.match_index == 0
 
-    assert m._id == id_
+    assert m.id == id_
     assert m._servers == servers
     assert m._state == constants.State.FOLLOWER
     assert m._election_timeout in range(150, 300)
     assert m._controller is controller
 
     # assert controller called with TimeMessage
-    first_call_args = m._controller.enqueue.call_args[0]
-    first_arg = first_call_args[0]
+    enqueue_calls = m._controller.enqueue.mock_calls
+    first_call = enqueue_calls[0]
+    name, args, kwargs = first_call
+    first_arg = args[0]
     assert isinstance(first_arg, messages.TimeMessage)
     assert first_arg.src == id_
     assert first_arg.dst == id_
@@ -40,7 +42,7 @@ def test_init(now):
 
 def test_handle_append_entries_leader_to_follower():
     controller = mock.MagicMock()
-    servers = []
+    servers = [(), ()]  # Need two items in list for id = 1 to be valid
     id_ = 1
     m = Machine(id_, controller, servers)
     m.current_term = 5
@@ -66,7 +68,7 @@ def test_handle_append_entries_leader_to_follower():
 
 def test_handle_append_entries_candidate_to_follower():
     controller = mock.MagicMock()
-    servers = []
+    servers = [(), ()]  # Need two items in list for id = 1 to be valid
     id_ = 1
     m = Machine(id_, controller, servers)
     m.current_term = 5
@@ -92,7 +94,7 @@ def test_handle_append_entries_candidate_to_follower():
 
 def test_handle_append_entries_leader_to_leader_msg_term_too_small():
     controller = mock.MagicMock()
-    servers = []
+    servers = [(), ()]  # Need two items in list for id = 1 to be valid
     id_ = 1
     m = Machine(id_, controller, servers)
     m.current_term = 5
@@ -117,7 +119,7 @@ def test_handle_append_entries_leader_to_leader_msg_term_too_small():
 
 def test_handle_append_entries_candidate_to_candidate_msg_term_too_small():
     controller = mock.MagicMock()
-    servers = []
+    servers = [(), ()]  # Need two items in list for id = 1 to be valid
     id_ = 1
     m = Machine(id_, controller, servers)
     m.current_term = 5
@@ -140,4 +142,44 @@ def test_handle_append_entries_candidate_to_candidate_msg_term_too_small():
 
     assert m._state == constants.State.CANDIDATE
     assert m.voted_for == id_
+
+
+def test_handle_no_comm_election_timeout():
+    controller = mock.MagicMock()
+    id_ = 1
+    m = Machine(id_, controller)
+    m._controller.enqueue.reset_mock()
+    m.current_term = 5
+    m._state = constants.State.FOLLOWER
+    m.voted_for = None
+    m.last_applied = 17
+
+    msg = messages.TimeMessage(
+        src=2,
+        dst=id_,
+        time=utils.now()
+    )
+
+    m.handle_no_comm_election_timeout(msg)
+
+    assert m.current_term == 6
+    assert m._state == constants.State.CANDIDATE
+    assert m.voted_for == id_
+
+    # Assert messages sent to all other servers
+    enqueue_calls = m._controller.enqueue.mock_calls
+    assert len(enqueue_calls) == len(m._servers) - 1
+    dsts = set()
+    for mock_call in enqueue_calls:
+        name, args, kwargs = mock_call
+        msg = args[0]
+        assert isinstance(msg, messages.RequestVoteMessage)
+        assert msg.src == id_
+        dsts.add(msg.dst)
+        assert msg.term == 6
+        assert msg.candidate_id == id_
+        assert msg.last_log_index == 17
+        assert msg.last_log_term == 5
+
+    assert set(range(len(m._servers))) - {id_} == dsts
 

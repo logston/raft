@@ -22,3 +22,12 @@ class AppendEntriesMessage(Message):
         self.entries = entries
         self.leader_commit = leader_commit
 
+
+class RequestVoteMessage(Message):
+    def __init__(self, term, candidate_id, last_log_index, last_log_term, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.term = term
+        self.candidate_id = candidate_id
+        self.last_log_index = last_log_index
+        self.last_log_term = last_log_term
+

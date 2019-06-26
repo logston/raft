@@ -15,7 +15,9 @@ class Machine:
         self.next_index = 0
         self.match_index = 0
 
-        self._id = id_
+        self.id = id_
+        server_ids = list(range(len(servers)))
+        assert id_ in server_ids, f'{self.id} not in {server_ids}'
         self._servers = servers
         self._state = constants.State.FOLLOWER
         self._election_timeout = random.randint(150, 300)
@@ -28,10 +30,6 @@ class Machine:
             time=utils.now() + self._election_timeout,
         )
         self._controller.enqueue(m)
-
-    @property
-    def id(self):
-        return self._id
 
     def handle_append_entries(self, msg: messages.AppendEntriesMessage):
         """
@@ -59,13 +57,22 @@ class Machine:
 
         Follower -> Candidate
         """
-        # Increment term
+        self.current_term += 1
+        self._state = constants.State.CANDIDATE
+        self.voted_for = self.id
 
-        # Change to candidate state
-
-        # Vote for self
-
-        # Issue requests for vote to every other server in cluster
+        for i in range(len(self._servers)):
+            if i == self.id:
+                continue
+            msg = messages.RequestVoteMessage(
+                src=self.id,
+                dst=i,
+                term=self.current_term,
+                candidate_id=self.id,
+                last_log_index=self.last_applied,
+                last_log_term=self.current_term - 1,
+            )
+            self._controller.enqueue(msg)
 
     def handle_request_vote(self, msg):
         """
