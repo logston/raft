@@ -69,9 +69,6 @@ class Machine:
         if self._state in (constants.State.CANDIDATE, constants.State.FOLLOWER):
             self.reset_ElectionTimeoutMessage()
 
-        if msg.leader_commit > self.commit_index:
-            self.commit_index = min(msg.leader_commit, len(self.log) - 1)
-
         # Reply false if term < current term
         if msg.term < self.current_term:
             success = False
@@ -80,32 +77,46 @@ class Machine:
         # whose term matches prev log term
         try:
             prev_log_entry = self.log[msg.prev_log_index]
-            if prev_log_entry.term != msg.prev_log_term:
-                success = False
         except IndexError:
             success = False
+            m = messages.AppendEntriesResponseMessage(
+                src=self.id,
+                dst=msg.src,
+                term=self.current_term,
+                success=success,
+            )
+            self._controller.enqueue(m)
+            return
+
+        if prev_log_entry.term != msg.prev_log_term:
+            success = False
+            m = messages.AppendEntriesResponseMessage(
+                src=self.id,
+                dst=msg.src,
+                term=self.current_term,
+                success=success,
+            )
+            self._controller.enqueue(m)
+            return
 
         # Reply to heartbeats
-        if not msg.entries:
-            m = messages.AppendEntriesResponseMessage(
-                src=self.id,
-                dst=msg.src,
-                term=self.current_term,
-                success=success,
-            )
-            self._controller.enqueue(m)
+        if msg.entries:
+            # truncate log with new logs
+            self.log[msg.prev_log_index + 1:] = []
 
-        else:
-            if prev_log_entry.term != msg.prev_log_term:
-                pass
+        # append new logs
+        self.log += msg.entries
 
-            m = messages.AppendEntriesResponseMessage(
-                src=self.id,
-                dst=msg.src,
-                term=self.current_term,
-                success=success,
-            )
-            self._controller.enqueue(m)
+        if msg.leader_commit > self.commit_index:
+            self.commit_index = min(msg.leader_commit, len(self.log) - 1)
+
+        m = messages.AppendEntriesResponseMessage(
+            src=self.id,
+            dst=msg.src,
+            term=self.current_term,
+            success=True,
+        )
+        self._controller.enqueue(m)
 
     def handle_AppendEntriesReplyMessage(self, msg):
         if self._state != constants.State.LEADER:

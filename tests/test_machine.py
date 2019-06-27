@@ -170,6 +170,44 @@ def test_handle_append_entries_candidate_to_candidate_msg_term_too_small():
     assert m.voted_for == id_
 
 
+def test_handle_append_entries_candidate_with_log_truncation():
+    controller = mock.MagicMock()
+    servers = [(), ()]  # Need two items in list for id = 1 to be valid
+    id_ = 1
+    m = Machine(id_, controller, servers)
+    m.current_term = 2
+    m.log = [
+        log.LogEntry(2, 'a'),
+        log.LogEntry(2, 'b'),
+        log.LogEntry(2, 'c'),
+    ]
+
+    m._state = constants.State.FOLLOWER
+    m.voted_for = id_
+
+    msg = messages.AppendEntriesMessage(
+        src=2,
+        dst=id_,
+        term=2,
+        leader_id=2,
+        prev_log_index=1,
+        prev_log_term=2,
+        entries=[
+            log.LogEntry(2, 'd'),
+            log.LogEntry(2, 'e'),
+        ],
+        leader_commit=4,
+    )
+    m.handle_AppendEntriesMessage(msg)
+
+    assert m.log == [
+        log.LogEntry(2, 'a'),
+        log.LogEntry(2, 'b'),
+        log.LogEntry(2, 'd'),
+        log.LogEntry(2, 'e'),
+    ]
+
+
 def test_handle_no_comm_election_timeout_follower_to_candidate():
     controller = mock.MagicMock()
     id_ = 1
@@ -598,4 +636,6 @@ def test_handle_RequestVoteMessage_vote_for_candidate():
     assert first_arg.dst == 4
     assert first_arg.term == m.current_term
     assert first_arg.vote_granted
+
+
 
