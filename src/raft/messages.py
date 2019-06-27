@@ -6,7 +6,7 @@ class Message:
         self.dst = dst
 
 
-class TimeMessage(Message):
+class ElectionTimeoutMessage(Message):
     def __init__(self, time, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.time = time
@@ -21,6 +21,12 @@ class AppendEntriesMessage(Message):
         self.prev_log_term = prev_log_term
         self.entries = entries
         self.leader_commit = leader_commit
+
+
+class AppendEntriesResponseMessage(Message):
+    def __init__(self, success, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.success = success
 
 
 class RequestVoteMessage(Message):
