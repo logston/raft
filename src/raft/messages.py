@@ -7,6 +7,18 @@ class Message:
 
 
 class ElectionTimeoutMessage(Message):
+    """
+    When received, server should start election
+    """
+    def __init__(self, time, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.time = time
+
+
+class LeaderTimeoutMessage(Message):
+    """
+    When received, leader should send new heartbeat.
+    """
     def __init__(self, time, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.time = time

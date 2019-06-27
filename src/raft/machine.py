@@ -14,6 +14,7 @@ class Machine:
         self._servers = servers
         self._state = constants.State.FOLLOWER
         self._election_timeout = random.randint(150, 300)
+        self._leader_timeout = 100
         self._controller = controller
         self._votes = 0
 
@@ -33,17 +34,6 @@ class Machine:
 
         # Schedule first timeout
         self.reset_ElectionTimeoutMessage()
-
-    def reset_ElectionTimeoutMessage(self):
-        # Tell controller to clear its queue of time messages from this
-        # machine and to enqueue a new time message from this machine.
-        m = messages.ElectionTimeoutMessage(
-            src=self.id,
-            dst=self.id,
-            term=self.current_term,
-            time=utils.now() + self._election_timeout,
-        )
-        self._controller.enqueue(m)
 
     def handle_AppendEntriesMessage(self, msg: messages.AppendEntriesMessage):
         """
@@ -122,7 +112,14 @@ class Machine:
         if self._state != constants.State.LEADER:
             return
 
-        self.send_heartbeat(msg.src)
+        if msg.success:
+            # Update match index
+            self.next_index[msg.src] += 1
+            self.match_index[msg.src] = self.next_index[msg.src] - 1
+
+        else:
+            # Update next index
+            self.next_index[msg.src] -= 1
 
     def get_last_log_data(self):
         index = len(self.log) - 1
@@ -167,6 +164,17 @@ class Machine:
             )
             self._controller.enqueue(msg)
 
+    def reset_ElectionTimeoutMessage(self):
+        # Tell controller to clear its queue of time messages from this
+        # machine and to enqueue a new time message from this machine.
+        m = messages.ElectionTimeoutMessage(
+            src=self.id,
+            dst=self.id,
+            term=self.current_term,
+            time=utils.now() + self._election_timeout,
+        )
+        self._controller.enqueue(m)
+
     def handle_RequestVoteMessage(self, msg: messages.RequestVoteMessage):
         """
         Some other server has asked this server for its vote for leader.
@@ -205,21 +213,6 @@ class Machine:
         )
         self._controller.enqueue(msg)
 
-    def send_heartbeat(self, dst):
-        last_log_term, last_log_index  = self.get_last_log_data()
-
-        msg = messages.AppendEntriesMessage(
-            src=self.id,
-            dst=dst,
-            term=self.current_term,
-            leader_id=self.id,
-            prev_log_index=last_log_index,
-            prev_log_term=last_log_term,
-            entries=(),
-            leader_commit=self.commit_index,
-        )
-        self._controller.enqueue(msg)
-
     def handle_RequestVoteResponseMessage(self, msg):
         """
         Received vote from other server.
@@ -242,6 +235,11 @@ class Machine:
             # If received a majority of votes, promote to leader
             self._state = constants.State.LEADER
 
+            # Reinitialize next and match indexes
+            _, last_log_index  = self.get_last_log_data()
+            self.next_index = [last_log_index + 1] * len(self._servers)
+            self.match_index = [0] * len(self._servers)
+
             # Tell other servers about new reign
             # Send heartbeats to establish control
             for i in range(len(self._servers)):
@@ -249,4 +247,28 @@ class Machine:
                     continue
 
                 self.send_heartbeat(i)
+
+            msg = messages.LeaderTimeoutMessage(
+                src=self.id,
+                dst=self.id,
+                term=self.current_term,
+                time=utils.now() + self._leader_timeout,
+            )
+            self._controller.enqueue(msg)
+
+    def send_heartbeat(self, dst):
+        last_log_term, last_log_index  = self.get_last_log_data()
+
+        msg = messages.AppendEntriesMessage(
+            src=self.id,
+            dst=dst,
+            term=self.current_term,
+            leader_id=self.id,
+            prev_log_index=last_log_index,
+            prev_log_term=last_log_term,
+            entries=(),
+            leader_commit=self.commit_index,
+        )
+        self._controller.enqueue(msg)
+
 

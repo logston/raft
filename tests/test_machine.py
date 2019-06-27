@@ -416,7 +416,10 @@ def test_handle_request_vote_reply_is_candidate_vote_not_granted():
     m._controller.enqueue.assert_not_called()
 
 
-def test_handle_request_vote_reply_is_candidate_win_election():
+@mock.patch('raft.machine.utils.now')
+def test_handle_request_vote_reply_is_candidate_win_election(now):
+    now.return_value = 123456789
+
     controller = mock.MagicMock()
     id_ = 1
     m = Machine(id_, controller)
@@ -438,7 +441,7 @@ def test_handle_request_vote_reply_is_candidate_win_election():
     assert m._state == constants.State.LEADER
 
     # Assert messages sent to all other servers
-    enqueue_calls = m._controller.enqueue.mock_calls
+    enqueue_calls = m._controller.enqueue.mock_calls[:-1]
     assert len(enqueue_calls) == len(m._servers) - 1
     dsts = set()
     for mock_call in enqueue_calls:
@@ -456,6 +459,14 @@ def test_handle_request_vote_reply_is_candidate_win_election():
 
     assert set(range(len(m._servers))) - {id_} == dsts
 
+    call = m._controller.enqueue.mock_calls[-1]
+    name, args, kwargs = call
+    first_arg = args[0]
+    assert isinstance(first_arg, messages.LeaderTimeoutMessage)
+    assert first_arg.src == id_
+    assert first_arg.dst == id_
+    assert first_arg.term == m.current_term
+    assert first_arg.time == 123456789 + m._leader_timeout
 
 def test_send_heartbeat():
     controller = mock.MagicMock()
