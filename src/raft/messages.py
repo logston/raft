@@ -1,9 +1,25 @@
+import json
+import logging
+
 
 class Message:
     def __init__(self, term, src, dst):
         self.term = term
         self.src = src
         self.dst = dst
+
+    def serialize(self):
+        name = self.__class__.__name__
+        args = {
+            attr_name: getattr(self, attr_name)
+            for attr_name in dir(self)
+            if not attr_name.startswith('_') and not callable(getattr(self, attr_name))
+        }
+        logging.info(f'{name}, {args}')
+        return json.dumps({
+            'name': name,
+            'args': args,
+        })
 
 
 class ElectionTimeoutMessage(Message):

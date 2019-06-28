@@ -256,6 +256,15 @@ class Machine:
             )
             self._controller.enqueue(msg)
 
+    def handle_LeaderTimeoutMesssage(self, msg):
+        # Tell other servers about new reign
+        # Send heartbeats to establish control
+        for i in range(len(self._servers)):
+            if i == self.id:
+                continue
+
+            self.send_heartbeat(i)
+
     def send_heartbeat(self, dst):
         last_log_term, last_log_index  = self.get_last_log_data()
 
