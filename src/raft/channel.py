@@ -15,12 +15,12 @@ class Channel:
         try:
             self.sock.sendall(header)
         except Exception as e:
-            logging.error(f'SOCKET: {e}')
+            logging.debug(f'SOCKET: {e}')
             return
         try:
             self.sock.sendall(msg)
         except Exception as e:
-            logging.error(f'SOCKET: {e}')
+            logging.debug(f'SOCKET: {e}')
             return
 
     def recv(self):

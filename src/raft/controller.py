@@ -75,13 +75,13 @@ class Controller:
         # If it is a timeout message, send to other servers after delay
         delivery_time = getattr(msg, 'time', 0)
         if delivery_time > 0:
-            logging.info(f'{self.id} - ENQUEUE - {delivery_time - utils.now()}')
+            logging.debug(f'{self.id} - ENQUEUE - {delivery_time - utils.now()}')
         sleep_time = 0
         if delivery_time:
             # put on outbox queue in future
             sleep_time = (delivery_time - utils.now()) / 1000
 
-        logging.info(f'{self.id} - OUTBOX: -> {msg.dst} sending item: {msg}')
+        logging.debug(f'{self.id} - OUTBOX: -> {msg.dst} sending item: {msg}')
         threading.Thread(
             target=self.delay_outbox,
             args=(sleep_time, msg),
@@ -94,7 +94,11 @@ class Controller:
 
     def handle_incomming_connections(self):
         while True:
-            client, client_address = self.channel.sock.accept()
+            try:
+                client, client_address = self.channel.sock.accept()
+            except KeyboardInterrupt:
+                sys.exit(0)
+
             logging.debug(f'{self.id} - LISTENING: <- {client_address}')
             ch = channel.Channel(client)
             threading.Thread(
@@ -143,7 +147,7 @@ class Controller:
         while True:
             logging.debug(f'{self.id} - INBOX: waiting for msg')
             msg = self.inbox.get()
-            logging.info(f'{self.id} - INBOX: fetched: {msg.__class__.__name__} from {msg.src}')
+            logging.debug(f'{self.id} - INBOX: fetched: {msg.__class__.__name__} from {msg.src}')
 
             getattr(self.machine, f'handle_{msg.__class__.__name__}')(msg)
 

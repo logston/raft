@@ -267,23 +267,12 @@ class Machine:
             self.next_index = [last_log_index + 1] * len(self._servers)
             self.match_index = [0] * len(self._servers)
 
-            # Tell other servers about new reign
-            # Send heartbeats to establish control
-            for i in range(len(self._servers)):
-                if i == self.id:
-                    continue
+            self.handle_LeaderTimeoutMessage(None)
 
-                self.send_heartbeat(i)
+    def handle_LeaderTimeoutMessage(self, _msg):
+        if self._state != constants.State.LEADER:
+            return
 
-            msg = messages.LeaderTimeoutMessage(
-                src=self.id,
-                dst=self.id,
-                term=self.current_term,
-                time=utils.now() + self._leader_timeout,
-            )
-            self._controller.enqueue(msg)
-
-    def handle_LeaderTimeoutMessage(self, msg):
         # Tell other servers about new reign
         # Send heartbeats to establish control
         for i in range(len(self._servers)):
