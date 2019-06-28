@@ -14,7 +14,10 @@ from . import utils
 from .machine import Machine
 
 
-logging.basicConfig(stream=sys.stdout, level=logging.INFO)
+from . import forest
+
+
+log = logging.getLogger(__name__)
 
 
 class Controller:
@@ -52,36 +55,31 @@ class Controller:
         address = self.servers[self.id]
         sock.bind(address)
         sock.listen(True)
-        logging.debug(f'{self.id} - LISTENING: on {address}')
+        log.debug(f'{self.id} - LISTENING: on {address}')
 
         self.channel = channel.Channel(sock)
 
     def create_channel(self, i):
         address = self.servers[i]
-        while True:
-            try:
-                logging.debug(f'{self.id} - CONNECTING: -> {i} @ {address}')
-                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                sock.connect(address)
-                break
-            except Exception as e:
-                logging.debug(f'{self.id} - CONNECTING FAILED: {e} -> {i}. Trying again.')
-                time.sleep(random.random())
 
-        logging.debug(f'{self.id} - CONNECTED: -> {i}')
+        log.debug(f'{self.id} - CONNECTING: -> {i} @ {address}')
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.connect(address)
+
+        log.debug(f'{self.id} - CONNECTED: -> {i}')
         return channel.Channel(sock)
 
     def enqueue(self, msg):
         # If it is a timeout message, send to other servers after delay
         delivery_time = getattr(msg, 'time', 0)
         if delivery_time > 0:
-            logging.debug(f'{self.id} - ENQUEUE - {delivery_time - utils.now()}')
+            log.debug(f'{self.id} - ENQUEUE - {delivery_time - utils.now()}')
         sleep_time = 0
         if delivery_time:
             # put on outbox queue in future
             sleep_time = (delivery_time - utils.now()) / 1000
 
-        logging.debug(f'{self.id} - OUTBOX: -> {msg.dst} sending item: {msg}')
+        log.info(f'{self.id} - OUTBOX: -> {msg.dst} sending item: {msg}')
         threading.Thread(
             target=self.delay_outbox,
             args=(sleep_time, msg),
@@ -99,7 +97,7 @@ class Controller:
             except KeyboardInterrupt:
                 sys.exit(0)
 
-            logging.debug(f'{self.id} - LISTENING: <- {client_address}')
+            log.debug(f'{self.id} - LISTENING: <- {client_address}')
             ch = channel.Channel(client)
             threading.Thread(
                 target=self.handle_channel,
@@ -108,17 +106,17 @@ class Controller:
 
     def handle_channel(self, ch):
         while True:
-            logging.debug(f'{self.id} - CHANNEL: waiting for data')
+            log.debug(f'{self.id} - CHANNEL: waiting for data')
 
             try:
                 data = ch.recv().decode()
             except OSError as e:
-                logging.debug(f'{self.id} - CHANNEL: {e}')
+                log.debug(f'{self.id} - CHANNEL: {e}')
                 break
 
             msg = self.deserialize_msg(data)
 
-            logging.debug(f'{self.id} - CHANNEL: Putting on queue: {msg}')
+            log.debug(f'{self.id} - CHANNEL: Putting on queue: {msg}')
 
             self.inbox.put(msg)
 
@@ -134,20 +132,24 @@ class Controller:
 
     def handle_outbox(self):
         while True:
-            logging.debug(f'{self.id} - OUTBOX: waiting for item')
+            log.debug(f'{self.id} - OUTBOX: waiting for item')
             msg = self.outbox.get()
 
             if msg.dst == self.id:  # No point in sockets if its going to the same controller
                 self.inbox.put(msg)
             else:
                 # send message down pipe
-                self.create_channel(msg.dst).send(msg.serialize().encode())
+                try:
+                    self.create_channel(msg.dst).send(msg.serialize().encode())
+                except Exception as e:
+                    log.debug(f'{self.id} - OUTBOX: -> {msg.dst} send failed. Trying again')
+                    self.outbox.put(msg)
 
     def handle_inbox(self):
         while True:
-            logging.debug(f'{self.id} - INBOX: waiting for msg')
+            log.debug(f'{self.id} - INBOX: waiting for msg')
             msg = self.inbox.get()
-            logging.debug(f'{self.id} - INBOX: fetched: {msg.__class__.__name__} from {msg.src}')
+            log.debug(f'{self.id} - INBOX: fetched: {msg.__class__.__name__} from {msg.src}')
 
             getattr(self.machine, f'handle_{msg.__class__.__name__}')(msg)
 

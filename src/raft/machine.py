@@ -6,6 +6,9 @@ from . import messages
 from . import utils
 
 
+log = logging.getLogger(__name__)
+
+
 class Machine:
     def __init__(self, id_, controller, servers=constants.SERVERS):
         ### Implementation details
@@ -49,11 +52,8 @@ class Machine:
         Could just be append entires request.
         Follower -> Follower
         """
-        # Need to check if should be demoted
-        if self._state in (constants.State.CANDIDATE, constants.State.LEADER):
-            if msg.term >= self.current_term:
-                self._state = constants.State.FOLLOWER
-                self.voted_for = None
+        self.voted_for = None
+        self._state = constants.State.FOLLOWER
 
         # If any message is received from leader,
         # tell controller to clear its queue of time messages from this
@@ -140,6 +140,7 @@ class Machine:
         """
         # Don't run for stale timeout messages
         if msg.time < self._election_timeout_ts:
+            log.debug(f'{self.id} - Stale timeout received')
             return
 
         # If machine is leader and it gets a timeout message,
@@ -149,6 +150,8 @@ class Machine:
         if self._state == constants.State.LEADER:
             self.reset_ElectionTimeoutMessage()
             return
+
+        log.info(f'{self.id} - ElectionTimeoutMessage received')
 
         self.current_term += 1
         self._state = constants.State.CANDIDATE
@@ -218,11 +221,11 @@ class Machine:
                     self._controller.enqueue(msg)
                     return
                 else:
-                    logging.info(f'{self.id} - RequestVoteMessage, index issues, reject')
+                    log.info(f'{self.id} - RequestVoteMessage, index issues, reject')
             else:
-                logging.info(f'{self.id} - RequestVoteMessage, voted for {self.voted_for}, reject')
+                log.info(f'{self.id} - RequestVoteMessage, voted for {self.voted_for}, reject')
         else:
-            logging.info(f'{self.id} - RequestVoteMessage, term too low, reject')
+            log.info(f'{self.id} - RequestVoteMessage, term too low, reject')
 
         msg = messages.RequestVoteResponseMessage(
             src=self.id,
@@ -243,22 +246,22 @@ class Machine:
             return
 
         if msg.term != self.current_term:
-            logging.warning(
+            log.debug(
                 f'{self.id} - Rejecting vote from {msg.src} because term is out of date'
                 f'\n{msg.term} != {self.current_term}'
             )
             return
 
         if not msg.vote_granted:
-            logging.warning(f'{self.id} - vote not granted')
+            log.debug(f'{self.id} -> {msg.src} vote not granted')
             return
 
         self._votes += 1
 
-        logging.warning(f'{self.id} - GOT A VOTE FROM {msg.src}')
+        log.warning(f'{self.id} - GOT A VOTE FROM {msg.src}')
 
         if self._votes > (len(self._servers) / 2):
-            logging.warning(f'{self.id} - !!!!!! BECAME LEADER !!!!!')
+            log.warning(f'{self.id} - !!!!!! BECAME LEADER !!!!!')
             # If received a majority of votes, promote to leader
             self._state = constants.State.LEADER
 
@@ -272,6 +275,8 @@ class Machine:
     def handle_LeaderTimeoutMessage(self, _msg):
         if self._state != constants.State.LEADER:
             return
+
+        log.info(f'{self.id} - LeaderTimeoutMessage received')
 
         # Tell other servers about new reign
         # Send heartbeats to establish control
