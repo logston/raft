@@ -4,6 +4,7 @@ import random
 from . import constants
 from . import messages
 from . import utils
+from .log import LogEntry
 
 
 log = logging.getLogger(__name__)
@@ -19,6 +20,7 @@ class Machine:
         self._state = constants.State.FOLLOWER
         self._election_timeout = random.randint(2000, 3000) + 200 * self.id
         self._leader_timeout = 1000
+        self._leader_id = None
         self._controller = controller
         self._votes = 0
 
@@ -40,6 +42,18 @@ class Machine:
         self._election_timeout_ts = 0
         self.reset_ElectionTimeoutMessage()
 
+    def handle_OpMessage(self, msg):
+        log.warning(f'{self.id} - Got message {msg}')
+        if self.id != self._leader_id:
+            log.warning(f'{self.id} -> {self._leader_id} redirecting message to leader')
+            msg.dst = self._leader_id
+            self._controller.enqueue(msg)
+            return
+
+        for entry in msg.entries:
+            log.warning(f'{self.id} -> Appending {entry}')
+            self.log.append(LogEntry(self.current_term, entry))
+
     def handle_AppendEntriesMessage(self, msg: messages.AppendEntriesMessage):
         """
         Could be heartbeat.
@@ -54,6 +68,7 @@ class Machine:
         """
         self.voted_for = None
         self._state = constants.State.FOLLOWER
+        self._leader_id = msg.leader_id
 
         # If any message is received from leader,
         # tell controller to clear its queue of time messages from this
@@ -97,7 +112,8 @@ class Machine:
             self.log[msg.prev_log_index + 1:] = []
 
         # append new logs
-        self.log += msg.entries
+        for entry in msg.entries:
+            self.log.append(LogEntry(*entry))
 
         if msg.leader_commit > self.commit_index:
             self.commit_index = min(msg.leader_commit, len(self.log) - 1)
@@ -121,13 +137,35 @@ class Machine:
 
         else:
             # Update next index
-            self.next_index[msg.src] -= 1
+            if self.next_index[msg.src] > 0:
+                self.next_index[msg.src] -= 1
 
-    def get_last_log_data(self):
-        index = len(self.log) - 1
+        term, index = self.get_log_data(self.next_index[msg.src] - 1)
+        entries = self.log[self.next_index[msg.src]:]
+
+        entries = [(e.term, e.data) for e in entries]
+
+        msg = messages.AppendEntriesMessage(
+            src=self.id,
+            dst=msg.src,
+            term=self.current_term,
+            leader_id=self.id,
+            prev_log_index=index,
+            prev_log_term=term,
+            entries=entries,
+            leader_commit=self.commit_index,
+        )
+        self._controller.enqueue(msg)
+
+    def get_log_data(self, index=None):
         term = 0
+        if index is None:
+            index = len(self.log) - 1
+
         if self.log:
-            term = self.log[index].term
+            log.warning(f'{self.id} - Looking for {index}')
+            return self.log[index].term, index
+
         return (term, index)
 
     def handle_ElectionTimeoutMessage(self, msg):
@@ -159,7 +197,7 @@ class Machine:
         self._votes = 1
 
         # Get last log index and term from logs
-        last_log_term, last_log_index  = self.get_last_log_data()
+        last_log_term, last_log_index  = self.get_log_data()
 
         # Request votes from all other servers
         for i in range(len(self._servers)):
@@ -206,7 +244,7 @@ class Machine:
                 # If the logs have last entries with different terms, then the log
                 # with the later term is more up-to-date. If the logs end with the same
                 # term, then whichever log is longer is more up-to-date.
-                self_last_log_term_and_index = self.get_last_log_data()
+                self_last_log_term_and_index = self.get_log_data()
                 cand_last_log_term_and_index = msg.last_log_term, msg.last_log_index
 
                 if self_last_log_term_and_index <= cand_last_log_term_and_index:
@@ -264,9 +302,10 @@ class Machine:
             log.warning(f'{self.id} - !!!!!! BECAME LEADER !!!!!')
             # If received a majority of votes, promote to leader
             self._state = constants.State.LEADER
+            self._leader_id = self.id
 
             # Reinitialize next and match indexes
-            _, last_log_index  = self.get_last_log_data()
+            _, last_log_index  = self.get_log_data()
             self.next_index = [last_log_index + 1] * len(self._servers)
             self.match_index = [0] * len(self._servers)
 
@@ -295,7 +334,7 @@ class Machine:
         self._controller.enqueue(msg)
 
     def send_heartbeat(self, dst):
-        last_log_term, last_log_index  = self.get_last_log_data()
+        last_log_term, last_log_index  = self.get_log_data()
 
         msg = messages.AppendEntriesMessage(
             src=self.id,

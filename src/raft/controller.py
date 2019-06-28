@@ -14,9 +14,6 @@ from . import utils
 from .machine import Machine
 
 
-from . import forest
-
-
 log = logging.getLogger(__name__)
 
 
@@ -31,7 +28,6 @@ class Controller:
         self.machine = Machine(self.id, self, self.servers)
 
         self.channel = None
-        self.channels = [None] * len(self.servers)
 
     def run(self):
         self.create_listen_socket()

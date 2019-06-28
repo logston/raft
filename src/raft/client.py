@@ -1,15 +1,31 @@
 from socket import socket, AF_INET, SOCK_STREAM
 
-from kvstore import KVClient
-from channel import Channel
+from . import channel
+from . import messages
+from . import constants
 
 
-address = ('localhost', 27000)
+def get_ch(i):
+    address = constants.SERVERS[i]
+    sock = socket(AF_INET, SOCK_STREAM)
+    sock.connect(address)
 
-sock = socket(AF_INET, SOCK_STREAM)
-sock.connect(address)
+    ch = channel.Channel(sock)
 
-ch = Channel(sock)
+    return ch
 
-client = KVClient(ch)
+
+def send_msg(i):
+    src = -1
+    dst = i
+    entries = ['INSERT A']
+
+    msg = messages.OpMessage(
+        src=src,
+        dst=dst,
+        term=None,
+        entries=entries,
+    )
+
+    get_ch(dst).send(msg.serialize().encode())
 

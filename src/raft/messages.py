@@ -25,6 +25,12 @@ class Message:
         })
 
 
+class OpMessage(Message):
+    def __init__(self, entries, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.entries = entries
+
+
 class ElectionTimeoutMessage(Message):
     """
     When received, server should start election
