@@ -1,6 +1,7 @@
 import queue
 import threading
 import socket
+import json
 import logging
 import random
 import sys
@@ -8,11 +9,12 @@ import time
 
 from . import channel
 from . import constants
+from . import messages
 from . import utils
 from .machine import Machine
 
 
-logging.basicConfig(stream=sys.stdout, level=logging.DEBUG)
+logging.basicConfig(stream=sys.stdout, level=logging.INFO)
 
 
 class Controller:
@@ -20,8 +22,8 @@ class Controller:
         self.id = id_
         self.servers = servers
 
-        self.inbox = queue.PriorityQueue()
-        self.outbox = queue.PriorityQueue()
+        self.inbox = queue.Queue()
+        self.outbox = queue.Queue()
 
         self.machine = Machine(self.id, self, self.servers)
 
@@ -32,12 +34,12 @@ class Controller:
         self.create_listen_socket()
 
         threading.Thread(
-            target=self.start_talking,
+            target=self.handle_outbox,
             daemon=True,
         ).start()
 
         threading.Thread(
-            target=self.handle_outbox,
+            target=self.handle_inbox,
             daemon=True,
         ).start()
 
@@ -50,77 +52,98 @@ class Controller:
         address = self.servers[self.id]
         sock.bind(address)
         sock.listen(True)
-        # logging.info(f'LISTENING: {self.id} on {address}')
+        logging.debug(f'{self.id} - LISTENING: on {address}')
 
         self.channel = channel.Channel(sock)
 
-    def start_talking(self):
-        for i in range(len(self.servers)):
-            if i != self.id:
-                self.channels[i] = self.create_speak_socket(i)
-
-    def create_speak_socket(self, i):
+    def create_channel(self, i):
         address = self.servers[i]
         while True:
             try:
-                logging.info(f'CONNECTING: {self.id} -> {i} @ {address}')
+                logging.debug(f'{self.id} - CONNECTING: -> {i} @ {address}')
                 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 sock.connect(address)
                 break
-            except ConnectionRefusedError:
-                # logging.info(f'CONNECTING FAILED: ConnectionRefusedError {self.id} -> {i}. Trying again.')
-                time.sleep(random.random())
-            except OSError as e:
-                # logging.info(f'CONNECTING FAILED: OSError {self.id} -> {i}. Trying again.')
+            except Exception as e:
+                logging.debug(f'{self.id} - CONNECTING FAILED: {e} -> {i}. Trying again.')
                 time.sleep(random.random())
 
-                print(e)
-                print(address)
-
-        # logging.info(f'CONNECTED: {self.id} -> {i}')
-        return sock
+        logging.debug(f'{self.id} - CONNECTED: -> {i}')
+        return channel.Channel(sock)
 
     def enqueue(self, msg):
         # If it is a timeout message, send to other servers after delay
-        delivery_time = getattr(msg, 'time', None)
-        if delivery_time is None:
-            # messages with no delivery time should have a high priority (ie. 0)
-            delivery_time = 0
+        delivery_time = getattr(msg, 'time', 0)
+        if delivery_time > 0:
+            logging.info(f'{self.id} - ENQUEUE - {delivery_time - utils.now()}')
+        sleep_time = 0
+        if delivery_time:
+            # put on outbox queue in future
+            sleep_time = (delivery_time - utils.now()) / 1000
 
-        item  = (delivery_time, msg.dst, msg.serialize())
+        logging.info(f'{self.id} - OUTBOX: -> {msg.dst} sending item: {msg}')
+        threading.Thread(
+            target=self.delay_outbox,
+            args=(sleep_time, msg),
+            daemon=True,
+        ).start()
 
-        if msg.dst == self.id:  # No point in sockets if its going to the same controller
-            self.inbox.put(item)
-        else:
-            self.outbox.put(item)
+    def delay_outbox(self, sleep_time, item):
+        time.sleep(sleep_time)
+        self.outbox.put(item)
 
     def handle_incomming_connections(self):
         while True:
             client, client_address = self.channel.sock.accept()
-            # logging.info(f'LISTENING: {self.id} <- {client_address}')
+            logging.debug(f'{self.id} - LISTENING: <- {client_address}')
             ch = channel.Channel(client)
             threading.Thread(
-                target=self.handle_inbox,
+                target=self.handle_channel,
                 args=(ch,),
             ).start()
 
-    def handle_inbox(self, ch):
+    def handle_channel(self, ch):
         while True:
-            logging.info(f'INBOX: {self.id} waiting for item')
-            item = self.inbox.get()
-            logging.info(f'INBOX: {self.id} fetched: {item}')
+            logging.debug(f'{self.id} - CHANNEL: waiting for data')
+
+            try:
+                data = ch.recv().decode()
+            except OSError as e:
+                logging.debug(f'{self.id} - CHANNEL: {e}')
+                break
+
+            msg = self.deserialize_msg(data)
+
+            logging.debug(f'{self.id} - CHANNEL: Putting on queue: {msg}')
+
+            self.inbox.put(msg)
+
+    def deserialize_msg(self, data):
+        serialized_msg = json.loads(data)
+
+        name = serialized_msg.get('name')
+        args = serialized_msg.get('args')
+
+        msg = getattr(messages, name)(**args)
+
+        return msg
 
     def handle_outbox(self):
         while True:
-            logging.info(f'OUTBOX: {self.id} waiting for item')
-            delivery_time, dst, data = item = self.outbox.get()
-            logging.info(f'OUTBOX: {self.id} -> {dst} sending item: {item}')
+            logging.debug(f'{self.id} - OUTBOX: waiting for item')
+            msg = self.outbox.get()
 
-            if delivery_time and utils.now() > delivery_time:
-                # not ready, put this back on the queue
-                self.outbox.put(item)
+            if msg.dst == self.id:  # No point in sockets if its going to the same controller
+                self.inbox.put(msg)
+            else:
+                # send message down pipe
+                self.create_channel(msg.dst).send(msg.serialize().encode())
 
-            # get socket for dst
+    def handle_inbox(self):
+        while True:
+            logging.debug(f'{self.id} - INBOX: waiting for msg')
+            msg = self.inbox.get()
+            logging.info(f'{self.id} - INBOX: fetched: {msg.__class__.__name__} from {msg.src}')
 
-            # send message down pipe
+            getattr(self.machine, f'handle_{msg.__class__.__name__}')(msg)
 

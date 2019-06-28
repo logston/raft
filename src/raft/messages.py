@@ -8,6 +8,9 @@ class Message:
         self.src = src
         self.dst = dst
 
+    def __str__(self):
+        return self.serialize()
+
     def serialize(self):
         name = self.__class__.__name__
         args = {
@@ -15,7 +18,7 @@ class Message:
             for attr_name in dir(self)
             if not attr_name.startswith('_') and not callable(getattr(self, attr_name))
         }
-        logging.info(f'{name}, {args}')
+        logging.debug(f'Serializing: {name}, {args}')
         return json.dumps({
             'name': name,
             'args': args,

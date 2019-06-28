@@ -1,3 +1,4 @@
+import logging
 import random
 
 from . import constants
@@ -13,8 +14,8 @@ class Machine:
         assert id_ in server_ids, f'{self.id} not in {server_ids}'
         self._servers = servers
         self._state = constants.State.FOLLOWER
-        self._election_timeout = random.randint(150, 300)
-        self._leader_timeout = 100
+        self._election_timeout = random.randint(2000, 3000) + 200 * self.id
+        self._leader_timeout = 1000
         self._controller = controller
         self._votes = 0
 
@@ -33,6 +34,7 @@ class Machine:
         self.match_index = [0] * len(self._servers)
 
         # Schedule first timeout
+        self._election_timeout_ts = 0
         self.reset_ElectionTimeoutMessage()
 
     def handle_AppendEntriesMessage(self, msg: messages.AppendEntriesMessage):
@@ -51,7 +53,7 @@ class Machine:
         if self._state in (constants.State.CANDIDATE, constants.State.LEADER):
             if msg.term >= self.current_term:
                 self._state = constants.State.FOLLOWER
-                self.voted_for = msg.leader_id
+                self.voted_for = None
 
         # If any message is received from leader,
         # tell controller to clear its queue of time messages from this
@@ -108,7 +110,7 @@ class Machine:
         )
         self._controller.enqueue(m)
 
-    def handle_AppendEntriesReplyMessage(self, msg):
+    def handle_AppendEntriesResponseMessage(self, msg):
         if self._state != constants.State.LEADER:
             return
 
@@ -123,10 +125,12 @@ class Machine:
 
     def get_last_log_data(self):
         index = len(self.log) - 1
-        term = self.log[index].term
+        term = 0
+        if self.log:
+            term = self.log[index].term
         return (term, index)
 
-    def handle_ElectionTimeoutMesssage(self, msg):
+    def handle_ElectionTimeoutMessage(self, msg):
         """
         If a follower receives no communication over a period of time,
         called the election timeout, then it assumes there is no viable
@@ -134,7 +138,11 @@ class Machine:
 
         Follower -> Candidate
         """
-        # If machine is leader and it gets a times message,
+        # Don't run for stale timeout messages
+        if msg.time < self._election_timeout_ts:
+            return
+
+        # If machine is leader and it gets a timeout message,
         # no worries, its the leader no other leader timed out.
         # Just place another timeout message on the controller queue
         # and carry on.
@@ -164,14 +172,18 @@ class Machine:
             )
             self._controller.enqueue(msg)
 
+        # Restart the countdown
+        self.reset_ElectionTimeoutMessage()
+
     def reset_ElectionTimeoutMessage(self):
+        self._election_timeout_ts = time = utils.now() + self._election_timeout
         # Tell controller to clear its queue of time messages from this
         # machine and to enqueue a new time message from this machine.
         m = messages.ElectionTimeoutMessage(
             src=self.id,
             dst=self.id,
             term=self.current_term,
-            time=utils.now() + self._election_timeout,
+            time=self._election_timeout_ts,
         )
         self._controller.enqueue(m)
 
@@ -182,6 +194,7 @@ class Machine:
         Follower -> Follower
         """
         if msg.term >= self.current_term:
+            self.current_term = msg.term
             # If votedFor is null or equal to candidateId, and candidate's log is
             # at least as up-to-date as receiver's log, grant vote.
             if (self.voted_for is None or self.voted_for == msg.candidate_id):
@@ -199,11 +212,17 @@ class Machine:
                     msg = messages.RequestVoteResponseMessage(
                         src=self.id,
                         dst=msg.src,
-                        term=self.current_term,
+                        term=msg.term,
                         vote_granted=True,
                     )
                     self._controller.enqueue(msg)
                     return
+                else:
+                    logging.info(f'{self.id} - RequestVoteMessage, index issues, reject')
+            else:
+                logging.info(f'{self.id} - RequestVoteMessage, voted for {self.voted_for}, reject')
+        else:
+            logging.info(f'{self.id} - RequestVoteMessage, term too low, reject')
 
         msg = messages.RequestVoteResponseMessage(
             src=self.id,
@@ -224,14 +243,22 @@ class Machine:
             return
 
         if msg.term != self.current_term:
+            logging.warning(
+                f'{self.id} - Rejecting vote from {msg.src} because term is out of date'
+                f'\n{msg.term} != {self.current_term}'
+            )
             return
 
         if not msg.vote_granted:
+            logging.warning(f'{self.id} - vote not granted')
             return
 
         self._votes += 1
 
+        logging.warning(f'{self.id} - GOT A VOTE FROM {msg.src}')
+
         if self._votes > (len(self._servers) / 2):
+            logging.warning(f'{self.id} - !!!!!! BECAME LEADER !!!!!')
             # If received a majority of votes, promote to leader
             self._state = constants.State.LEADER
 
@@ -256,7 +283,7 @@ class Machine:
             )
             self._controller.enqueue(msg)
 
-    def handle_LeaderTimeoutMesssage(self, msg):
+    def handle_LeaderTimeoutMessage(self, msg):
         # Tell other servers about new reign
         # Send heartbeats to establish control
         for i in range(len(self._servers)):
@@ -264,6 +291,14 @@ class Machine:
                 continue
 
             self.send_heartbeat(i)
+
+        msg = messages.LeaderTimeoutMessage(
+            src=self.id,
+            dst=self.id,
+            term=self.current_term,
+            time=utils.now() + self._leader_timeout,
+        )
+        self._controller.enqueue(msg)
 
     def send_heartbeat(self, dst):
         last_log_term, last_log_index  = self.get_last_log_data()

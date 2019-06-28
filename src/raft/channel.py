@@ -1,3 +1,4 @@
+import logging
 from socket import socket, AF_INET, SOCK_STREAM
 
 
@@ -11,8 +12,16 @@ class Channel:
         # Send msg
         assert len(msg) < 10 ** 12
         header = b'%12d' % len(msg)
-        self.sock.sendall(header)
-        self.sock.sendall(msg)
+        try:
+            self.sock.sendall(header)
+        except Exception as e:
+            logging.error(f'SOCKET: {e}')
+            return
+        try:
+            self.sock.sendall(msg)
+        except Exception as e:
+            logging.error(f'SOCKET: {e}')
+            return
 
     def recv(self):
         # Received the size of the message
